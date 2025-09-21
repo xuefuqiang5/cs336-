@@ -1,23 +1,23 @@
+import regex as re
+from itertools import chain
+from collections import Counter
+data = "hello, world!, nihao woshi xue wenqi <|endoftext|> xue wenqi 0001"
+special_tokens = ["<|endoftext|>"]
+pat = "(" + "|".join(map(re.escape, special_tokens)) + ")"
+data = re.split(pat, data)
+pat = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+data = list(chain.from_iterable(
+    re.findall(pat, t) if t not in special_tokens else [t] for t in data
+))
+print(data)
 
-string = {"hello": 4, "world": 3, "nihao": 4}
-def gpt2_bytes_to_unicode_local() -> dict[int, str]:
-
-    bs = list(range(33, 127)) + list(range(161, 173)) + list(range(174, 256)) 
-    cs = bs[:]
-    n = 0
-    for b in range(256):
-        if b not in bs:
-            bs.append(b)
-            cs.append(256 + n)
-            n += 1
-    return {b: chr(c) for b, c in zip(bs, cs)}
+pre_train_freq = Counter(x for x in data if x not in special_tokens)
+print(pre_train_freq.items())
 
 
-bytes_to_unicode_map = gpt2_bytes_to_unicode_local()
-unicode_to_bytes_map = {v: bytes([k]) for k, v in bytes_to_unicode_map.items()}
+data = {"helo": 1, "world": 2, "“": 3}
+data = {word.encode('utf-8'): freq for word, freq in data.items()}
+print(data.items())
 
-byte_freq = {
-    tuple(b.encode('utf-8') for b in word): freq
-    for word, freq in string.items()
-} 
+byte_freq = {tuple(bytes([b]) for b in word): freq for word, freq in data.items()}
 print(byte_freq.items())
