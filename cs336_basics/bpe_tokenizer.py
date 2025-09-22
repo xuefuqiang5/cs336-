@@ -84,7 +84,7 @@ def bpe_tokenizer(
         merged_dict = bpe_merge(merged_dict, merges)
 
     
-    print(f"the vocab's size = {len(vocab.items())}, the merge' size is {len(merges)}") 
+    print(f"the vocab's size = {len(vocab.items())}, the merge' size = {len(merges)}") 
     for pair in merges: 
         new_token = pair[0] + pair[1]
         vocab[next_vocab_key] = new_token
@@ -95,4 +95,3 @@ def bpe_tokenizer(
     
 
 
-    
