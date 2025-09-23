@@ -3,40 +3,40 @@ import regex as re
 from collections import Counter
 from itertools import chain
 import time
+import heapq
 def bpe_merge(
         byte_dict: dict[tuple, int], 
-        merges: list[tuple],
+        best_pair: tuple[bytes, bytes],
+        count: Counter
 ) -> dict[tuple, int]: 
-    start = time.time()
-    pair_dict = Counter(
-        (word[i], word[i+1])
-        for word, freq in byte_dict.items()
-        for i in range(len(word) - 1)
-        for _ in range(freq)
-    )    
-    end = time.time() 
-
-    max_freq = max(pair_dict.values())
-    candidates = [pair for pair, freq in pair_dict.items() if freq == max_freq]
-    best_tuple = max(candidates)
-
-    merges.append((best_tuple[0], best_tuple[1]))
-
+    
     merged_dict = {}
     for word, freq in byte_dict.items(): 
+
         merged_tokens, i = [], 0
 
         while i < len(word): 
-            if (i < len(word) - 1) and ((word[i], word[i+1]) == best_tuple): 
-                merged_tokens.append(word[i] + word[i+1])
+            if (i < len(word) - 1) and ((word[i], word[i+1]) == best_pair): 
+                # 当word[i] 是之前pair 的右元素
+                # 当new_pair 的右元素为best_pair
+                if i > 0: 
+                    count[(word[i-1], word[i])] -= freq
+                    count[(word[i-1], best_pair[0] + best_pair[1])] += freq
 
+                # 当word[i+1] 为之前pair 的左元素
+                # 当new_pair 的左元素为best_pair
+                if i + 2 < len(word): 
+                    count[(word[i+1], word[i+2])] -= freq
+                    count[(best_pair[0] + best_pair[1], word[i+2])] += freq 
+                merged_tokens.append(word[i] + word[i+1])
                 i += 2
+
             else: 
                 merged_tokens.append(word[i])
                 i += 1
 
         merged_dict[tuple(merged_tokens)] = freq
-           
+        
     return merged_dict 
 
 def bpe_tokenizer(
@@ -81,12 +81,34 @@ def bpe_tokenizer(
     epochs = vocab_size - (len(existing_tokens))
 
     merged_dict = byte_freq
+    count = Counter(
+            (word[i], word[i+1])
+            for word, freq in byte_freq.items()
+            for i in range(len(word) - 1)
+            for _ in range(freq)
+    )
+    
+    # best_pair = max(
+    #     count,
+    #     key=lambda x: (count[x], -ord(str(x[0])[0]))
+    # )
+
 
     merges = []
 
     start = time.time()
     for _ in range(epochs): 
-        merged_dict = bpe_merge(merged_dict, merges)
+        max_freq = max([freq for freq in count.values()])
+        candidates = [pair for pair, freq in count.items() if freq == max_freq]
+        best_pair = max(candidates)
+        merges.append(best_pair)
+        count[best_pair] = 0
+        merged_dict = bpe_merge(merged_dict, best_pair, count)
+        # best_pair = max(
+        #     count,
+        #     key=lambda x: (count[x], -ord(str(x[0])[0]))
+        # )
+        
 
     end = time.time() 
     print(f"the merge process cost {end - start}")
