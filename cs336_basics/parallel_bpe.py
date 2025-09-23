@@ -6,33 +6,33 @@ from multiprocessing import Pool, cpu_count
 from functools import partial
 import heapq
 
-def bytes_tokenize(
-        data: str,
-        special_tokens: list[str], 
-) -> dict[tuple, int]: 
+def pre_tokenization(text: str, special_tokens: list[str]) -> tuple[dict[tuple[bytes], int], Counter]:
 
     pat = "(" + "|".join(map(re.escape, special_tokens)) + ")"
-    data = re.split(pat, data)
+    text = re.split(pat, text)
 
     pat = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    data = list(chain.from_iterable(
-        re.findall(pat, t) if t not in special_tokens else [t] for t in data
-    )) 
+    text = list(chain.from_iterable(
+        re.findall(pat, t) if t not in special_tokens else [t] for t in text
+    ))
 
-    pre_train_freq = Counter(x for x in data if x not in special_tokens)
+    pre_train_freq = Counter(x for x in text if x not in special_tokens)
+
     pre_train_freq = {word.encode('utf-8'): freq for word, freq in pre_train_freq.items()}
 
-    byte_freq = {
-            tuple(bytes([b]) for b in word): freq
-            for word, freq in pre_train_freq.items()
-        }
-    
+    count = Counter(
+        (word[i], word[i+1])
+        for word, freq in pre_train_freq.items()
+        for i in range(len(word) - 1)
+        for _ in range(freq)
+    )
 
-    return byte_freq
-# count = {
-#     {("pair1", "pair2"): freq}
-# }
-# {'a', 'b', 'c', 'd'} -> {'ab', 'bd', 'cd'} --> {'ab', 'c', 'd'} -> {'abc', 'cd'}
+    return pre_train_freq, count
+
+     
+def split_text_to_chunk(input_paht: str, work_number: int) -> None:  
+    raise NotImplemented
+
 def merge_update_heap(
         bytes_dict: dict[tuple, int], 
         best_pair: tuple, 
@@ -68,16 +68,6 @@ def merge_update_heap(
             new_bytes_dict[tuple(merged_tokens)] = freq
     
     return new_bytes_dict 
-
-def get_counter(sub_bytes_dict: dict[tuple, int]) -> Counter: 
-    pair_dict = Counter(
-            (word[i], word[i+1])
-            for word, freq in sub_bytes_dict.items()
-            for i in range(len(word) - 1)
-            for _ in range(freq)
-        )    
-    
-    return pair_dict
 
 def parallel_bpe_train(
        input_path: str, 
@@ -133,7 +123,7 @@ def parallel_bpe_train(
             best_pair = max(candidates)
             merges.append(best_pair)
 
-            best_pair =
+            best_pair = None
             merge_with_best_pair = partial(merge_update_heap, best_pair=best_pair)
 
             bytes_dicts = pool.map(merge_with_best_pair, bytes_dicts)
