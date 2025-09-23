@@ -2,18 +2,19 @@ import os
 import regex as re
 from collections import Counter
 from itertools import chain
-
+import time
 def bpe_merge(
         byte_dict: dict[tuple, int], 
         merges: list[tuple],
 ) -> dict[tuple, int]: 
+    start = time.time()
     pair_dict = Counter(
         (word[i], word[i+1])
         for word, freq in byte_dict.items()
         for i in range(len(word) - 1)
         for _ in range(freq)
     )    
-    
+    end = time.time() 
 
     max_freq = max(pair_dict.values())
     candidates = [pair for pair, freq in pair_dict.items() if freq == max_freq]
@@ -43,6 +44,7 @@ def bpe_tokenizer(
         vocab_size: int, 
         special_tokens: list[str]
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    start = time.time()
     with open(input_path, "r", encoding='utf-8') as f: 
         data = f.read()
     
@@ -73,17 +75,21 @@ def bpe_tokenizer(
         tuple(bytes([b]) for b in word): freq
         for word, freq in pre_train_freq.items()
     } 
-    print([ch for word in byte_freq.keys() for ch in word if len(ch) > 1])
+    end = time.time()
+    print(f"pre-token cost {(end - start)}")
+
     epochs = vocab_size - (len(existing_tokens))
 
     merged_dict = byte_freq
 
     merges = []
 
+    start = time.time()
     for _ in range(epochs): 
         merged_dict = bpe_merge(merged_dict, merges)
 
-    
+    end = time.time() 
+    print(f"the merge process cost {end - start}")
     print(f"the vocab's size = {len(vocab.items())}, the merge' size = {len(merges)}") 
     for pair in merges: 
         new_token = pair[0] + pair[1]
