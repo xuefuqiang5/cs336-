@@ -1,7 +1,7 @@
 import regex as re
 from itertools import chain
 import json
-
+from collections.abc import Iterable, Iterator
 """
 Byte Pair Encoding (BPE) Tokenizer Implementation
 =================================================
@@ -59,21 +59,45 @@ def split2chunks(text: str, endoftext: str) -> list[str]:
     
     return chunks
         
-def pre_tokenizer(text: str, special_tokens: list[str] | None=None) -> list[str]: 
-    if special_tokens is not None:
+# def pre_tokenizer(text: str, special_tokens: list[str] | None=None) -> list[str]: 
+#     if special_tokens is not None:
+#         pat = "(" + "|".join(map(re.escape, special_tokens)) + ")"
+#         pretokens = re.split(pat, text)
+
+#         pat = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+#         pretokens = list(chain.from_iterable(
+#             re.findall(pat, t) if t not in special_tokens else [t] for t in pretokens
+#         ))
+#     else: 
+#         pat = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+#         pretokens = re.findall(pat, text)
+
+#     return pretokens
+def pre_tokenizer(text: str, special_tokens: list[str]):
+    if special_tokens:
+        # longest match first
+        special_tokens = sorted(special_tokens, key=len, reverse=True)
+        # (A|BB|CCC)
         pat = "(" + "|".join(map(re.escape, special_tokens)) + ")"
-        pretokens = re.split(pat, text)
+        parts = re.split(pat, text)
+    else:
+        parts = [text]
 
-        pat = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-        pretokens = list(chain.from_iterable(
-            re.findall(pat, t) if t not in special_tokens else [t] for t in pretokens
-        ))
-    else: 
-        pat = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-        pretokens = re.findall(pat, text)
-
-    return pretokens
-
+    # Now apply normal GPT-2 regex tokenization
+    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    
+    out = []
+    for p in parts:
+        if not p: 
+            continue
+        
+        # if p is exactly a special token → keep it as-is
+        if special_tokens and p in special_tokens:
+            out.append(p)
+            continue
+        
+        out.extend(re.findall(PAT, p))
+    return out
     
 class BPETokenizer:
     def __init__(
@@ -125,47 +149,64 @@ class BPETokenizer:
         # --- create tokenizer instance ---
         return cls(vocab=reverse_vocab, merges=merges, special_tokens=special_tokens)   
 
-    def merge_word(self, word: list[bytes]) -> list[bytes]: 
-        i, merged_word = 0, word
-        while i+1 < len(merged_word): 
-            t = []
-            if tuple([merged_word[i], merged_word[i+1]]) in self.merges:
-                t = [self.merges[0] + self.merges[1]]
-                if i+2 < len(merged_word):
-                    merged_word = merged_word[:i] + t + merged_word[i+2:]
-                else: 
-                    merged_word = merged_word[:i] + t
-                i = 0
-                continue 
-            i += 1
-        return merged_word 
+    def merge_word(self, word: bytes) -> list[bytes]: 
+        merged_word = list(word)
+        merged_word = [bytes([b]) for b in merged_word]
+        merges = {pair:i for i, pair in enumerate(self.merges)}
+        while True: 
+            pairs = [(merged_word[i], merged_word[i+1]) for i in range(0, len(merged_word) - 1)] 
+            candidate_merged_pair = None
+            idx = -1
+            for j, pair in enumerate(pairs): 
+                if pair in merges:
+                    if candidate_merged_pair == None or merges[pair] < merges[candidate_merged_pair]: 
+                        candidate_merged_pair = pair
+                        idx = j
+            if candidate_merged_pair == None: 
+                break 
+            merged_word = merged_word[:idx] + [candidate_merged_pair[0] + candidate_merged_pair[1]] + merged_word[idx+2:]
+        return merged_word
 
 
     def encode(self, text: str) -> list[int]: 
         pretokens = pre_tokenizer(text, self.special_tokens)
-        tokens = [list(bytes([c]) for c in w) for w in pretokens]
-        merged_tokens = []
+        tokens = [w.encode('utf-8') for w in pretokens]
+        interger_seq = []
         reverse_vocab = {v:k for k, v in self.vocab.items()}
-        special_tokens = [s.encode('utf-8') for s in special_tokens]
+        if self.special_tokens is not None:
+            special_tokens = [s.encode('utf-8') for s in self.special_tokens]
+        else: 
+            special_tokens = None
         for w in tokens: 
-            if w in special_tokens: 
-                merged_tokens.append(w)
+            if special_tokens is not None and w in special_tokens: 
+                interger_seq.append(reverse_vocab[w])
                 continue
-            merged_tokens.append(self.merge_word(w))
-        integer_seq = [reverse_vocab[b] for w in merged_tokens for b in w]
-        return integer_seq
+            t = self.merge_word(w)
+            for b in t: 
+                interger_seq.append(reverse_vocab[b]) 
+        return interger_seq
     
-    def decode(self): 
-        pass
 
+    def decode(self, ids: list[int]) -> str:
+        return b"".join(self.vocab[i] for i in ids).decode("utf-8", errors="replace")
 
-data = "Sample 10 documents from TinyStories \
-and OpenWebText. Using your previously-trained TinyS-tories and OpenWebText tokenizers (10K and 32K vocabulary size, respectively), encode these sampled documents into integer IDs. What is each tokenizer’s compression ratio (bytes/token)?\
-Deliverable: A one-to-two sentence response.hhh"
+    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        """
+        Lazily encode an iterable of strings (e.g., file lines).
+        This avoids loading large text into memory.
+        """
+        for chunk in iterable:
+            pretokens = pre_tokenizer(chunk, self.special_tokens)
+            words = [w.encode("utf-8") for w in pretokens]
+            reverse_vocab = {v: k for k, v in self.vocab.items()}
+            special_bytes = None
+            if self.special_tokens:
+                special_bytes = [s.encode("utf-8") for s in self.special_tokens]
+            for w in words:
+                if special_bytes is not None and w in special_bytes:
+                    yield reverse_vocab[w]
+                    continue
+                merged = self.merge_word(w)
+                for b in merged:
+                    yield reverse_vocab[b]
 
-bpetokenize = BPETokenizer.from_files(
-    "/Users/xuewenqi/code/cs336/assignment1-basics/tests/fixtures/train-bpe-reference-vocab.json", 
-    "/Users/xuewenqi/code/cs336/assignment1-basics/tests/fixtures/train-bpe-reference-merges.txt" 
-    ) 
-
-print(bpetokenize.encode(data))
