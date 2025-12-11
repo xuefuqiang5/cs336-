@@ -12,6 +12,8 @@ from torch import Tensor
 from cs336_basics.bpe_train import bpe_train 
 from cs336_basics.Tokenizer import BPETokenizer
 from cs336_basics.Linear import Linear
+from cs336_basics.Embedding import Embedding
+from cs336_basics.RMSNorm import RMSNorm
 
 
 def run_linear(
@@ -57,7 +59,9 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
 
-    raise NotImplementedError
+    layer = Embedding(vocab_size, d_model)
+    layer.load_state_dict({"embedding": weights})
+    return layer(token_ids)
 
 
 def run_swiglu(
@@ -85,7 +89,7 @@ def run_swiglu(
     # Example:
     # If your state dict keys match, you can use `load_state_dict()`
     # swiglu.load_state_dict(weights)
-    # You can also manually assign the weights
+    # You canmalso manually assign the weights
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
@@ -384,7 +388,10 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    layer = RMSNorm(d_model, eps)
+    layer.load_state_dict({"g": weights})
+    return layer(in_features)
+
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
