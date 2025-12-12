@@ -14,6 +14,8 @@ from cs336_basics.Tokenizer import BPETokenizer
 from cs336_basics.Linear import Linear
 from cs336_basics.Embedding import Embedding
 from cs336_basics.RMSNorm import RMSNorm
+from cs336_basics.PositionwiseFeedforward import PositionwiseFeedforward
+from cs336_basics.RoPE import RoPE
 
 
 def run_linear(
@@ -93,7 +95,9 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    swiglu = PositionwiseFeedforward(d_model, d_ff)
+    swiglu.load_state_dict({"W_1": w1_weight, "W_2": w2_weight, "W_3": w3_weight})
+    return swiglu(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -210,7 +214,10 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    layer = RoPE(theta, d_k, max_seq_len)
+    return layer(in_query_or_key, token_positions)
+
+
 
 
 def run_transformer_block(
