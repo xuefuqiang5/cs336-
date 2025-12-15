@@ -30,4 +30,4 @@ class Linear(nn.Module):
             x: torch.Tensor
     ) -> torch.Tensor:
 
-        return einsum(self.W, x, "d_out d_in, ... d_in -> ... d_out")
+        return einsum(x, self.W, "... d_in, d_out d_in -> ... d_out")

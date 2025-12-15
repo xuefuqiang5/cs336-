@@ -1,32 +1,52 @@
 import torch 
-from einops import einsum, rearrange
-import einx
-image = torch.randn(32, 64, 128, 3)
-dim_by = torch.linspace(start=0.0, end=1.0, steps=10)
+from torch import nn
+from .RMSNorm import RMSNorm
+from .MultiheadSelfAttention import MultiheadSelfAttention
+from .PositionwiseFeedforward import PositionwiseFeedforward
+from .Embedding import Embedding
+from .Linear import Linear
+from .MultiheadSelfAttention import softmax
 
-print("image's shape is ", image.shape)
-print("dim_by's shape is ", dim_by.shape)
+class TransformerBlock(nn.Module): 
+    def __init__(
+            self, 
+            d_model: int, 
+            num_heads: int, 
+            d_ff: int,
+            max_seq_len: int, 
+            theta: float
+    ):
+        super().__init__()
+        self.rmsnorm1 = RMSNorm(d_model)
+        self.rmsnorm2 = RMSNorm(d_model)
+        self.attention = MultiheadSelfAttention(d_model, num_heads, max_seq_len, True, theta)
+        self.ffn = PositionwiseFeedforward(d_model, d_ff)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        output = self.attention(self.rmsnorm1(x)) + x
+        return self.ffn(self.rmsnorm2(output)) + output
+    
 
-dim_value = rearrange(dim_by, "dim_value -> 1 dim_value 1 1 1")
-image_rearr = rearrange(image, "batch high width channel -> batch 1 high width channel") 
-res = dim_value * image_rearr
-print(res.shape)
+class TransformerLm(nn.Module): 
+    def __init__(
+            self, 
+            vocab_size: int, 
+            context_length: int, 
+            num_layers: int,
+            d_model: int, 
+            num_heads: int,
+            d_ff: int, 
+            theta: float
+    ):
+        super().__init__()
+        self.embedding = Embedding(vocab_size, d_model)
+        self.blocks = nn.ModuleList(TransformerBlock(d_model, num_heads, d_ff, context_length, theta) for _ in range(num_layers))
+        self.rmsnorm = RMSNorm(d_model)
+        self.output = Linear(d_model, vocab_size)
 
-
-res = einsum(image, dim_by, "batch high width channel, dim_value -> batch dim_value high width channel") 
-print(res.shape)
-
-channels_last = torch.randn(64, 32, 32, 3)
-# (batch, height, width, channel)
-B = torch.randn(32*32, 32*32)
-width = 32
-height = 32
-
-res = einx.dot(
-    "batch row_in col_in channels, (row_out col_out) (row_in col_in) ->\
-        batch row_out col_out channels",
-        channels_last, B,
-        row_out = width, col_out = height,
-    )
-
-print(res.shape)
+    def forward(self, x: torch.Tensor) -> torch.Tensor: 
+        o = self.embedding(x)
+        for l in self.blocks: 
+            o = l(o)
+        o = self.rmsnorm(o)
+        return self.output(o)
