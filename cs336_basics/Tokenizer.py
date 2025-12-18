@@ -43,36 +43,29 @@ Overall, this file provides a faithful BPE tokenizer implementation that is
 compatible with common large language model tokenization workflows and supports
 both high accuracy and efficient streaming behavior.
 """
-def split2chunks(text: str, endoftext: str) -> list[str]: 
-    chunks = []
-    start = 0
-    while True: 
-        idx = text.find(endoftext, start) 
-        if idx == -1: 
-            rest = text[start].strip()
-            if rest: 
-                chunks.append(rest)
+def split2chunks(data_path: str, endoftext: str, buffer_size: int = 1024 * 1024) -> Iterator[str]: 
+    buffer = ""
+    with open(data_path, "r", encoding='utf-8') as f: 
+        while True: 
+            data = f.read(buffer_size)
+            if not data: 
                 break
-        chunk = text[start:idx+len(endoftext)]
-        chunks.append(chunk)
-        start = idx + len(endoftext)
-    
-    return chunks
-        
-# def pre_tokenizer(text: str, special_tokens: list[str] | None=None) -> list[str]: 
-#     if special_tokens is not None:
-#         pat = "(" + "|".join(map(re.escape, special_tokens)) + ")"
-#         pretokens = re.split(pat, text)
+            buffer += data
+            while True:
+                idx = buffer.find(endoftext)
+                if idx == -1: 
+                    break
+                end = idx + len(endoftext)
+                chunk = buffer[:end]
+                yield chunk
+                buffer = buffer[end:]
+    if buffer: 
+        buffer += endoftext
+        yield buffer 
 
-#         pat = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-#         pretokens = list(chain.from_iterable(
-#             re.findall(pat, t) if t not in special_tokens else [t] for t in pretokens
-#         ))
-#     else: 
-#         pat = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-#         pretokens = re.findall(pat, text)
 
-#     return pretokens
+
+         
 def pre_tokenizer(text: str, special_tokens: list[str]):
     if special_tokens:
         # longest match first
