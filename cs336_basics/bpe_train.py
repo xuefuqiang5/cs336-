@@ -33,6 +33,8 @@ def bpe_merge(
         merged_dict[tuple(merged_tokens)] = freq
     return merged_dict 
 
+
+
 def bpe_train(
         input_path: str, 
         vocab_size: int, 
@@ -47,6 +49,9 @@ def bpe_train(
     data = list(chain.from_iterable(
         re.findall(pat, t) if t not in special_tokens else [t] for t in data
     ))
+
+
+
     pre_train_freq = Counter(x for x in data if x not in special_tokens)
     pre_train_freq = {word.encode('utf-8'): freq for word, freq in pre_train_freq.items()}
     vocab = {i: bytes([i]) for i in range(256)}
