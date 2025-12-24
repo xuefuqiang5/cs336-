@@ -5,6 +5,9 @@ from collections.abc import Iterator
 from multiprocessing import Pool, cpu_count
 from collections import defaultdict
 import heapq
+from tqdm import tqdm
+import json
+import os
 
 def update(pair_info, best_pair, word_count):
     affected_words = list(pair_info[best_pair]["word"])
@@ -134,15 +137,12 @@ def train_bep(input_path, vocab_size, special_tokens):
             pair_info[pair]["word"].add(word) 
 
     class ReverseByteWrapper:
-        __slots__ = ['pair']  # 使用 __slots__ 优化内存，处理 1GB 数据时很重要
+        __slots__ = ['pair']  
 
         def __init__(self, pair: tuple):
             self.pair = pair
 
         def __lt__(self, other):
-            # 核心逻辑：反转比较运算符
-            # 当 self.pair 在逻辑上“大于” other.pair 时，返回 True
-            # 这样 heapq 会认为更大的字节序是“更小”的，从而优先弹出
             return self.pair > other.pair
 
         def __eq__(self, other):
@@ -156,7 +156,7 @@ def train_bep(input_path, vocab_size, special_tokens):
         if info["freq"] > 0
     ]
     heapq.heapify(heap)
-    for _ in range(vocab_size - len(special_tokens) - 256): 
+    for _ in tqdm(range(vocab_size - len(special_tokens) - 256)): 
         best_pair = None
         while True: 
             neg_freq, wrapper = heapq.heappop(heap)
@@ -170,3 +170,4 @@ def train_bep(input_path, vocab_size, special_tokens):
     vocab_list = [bytes([i]) for i in range(256)] + [s.encode('utf-8') for s in special_tokens] + [p[0] + p[1] for p in merges]
     vocab  = {i: v for i, v in enumerate(vocab_list)}
     return vocab, merges
+
