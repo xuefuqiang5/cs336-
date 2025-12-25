@@ -8,6 +8,7 @@ import heapq
 from tqdm import tqdm
 import json
 import os
+import time
 
 def update(pair_info, best_pair, word_count):
     affected_words = list(pair_info[best_pair]["word"])
@@ -106,6 +107,8 @@ def pre_tokenizer_worker(args):
         if tok not in special_set
     )
 def train_bep(input_path, vocab_size, special_tokens): 
+    print("Starting pre tokenizer")
+    start = time.perf_counter()
     chunks = split2chunks(input_path, special_tokens[0])
 
     n_proc = cpu_count()
@@ -121,6 +124,8 @@ def train_bep(input_path, vocab_size, special_tokens):
             byte_counter.update(local_counter)
     
     # count.type = dict[tuple[bytes, bytes], int]
+    end = time.perf_counter()
+    print(f"Elapsed time: {end - start:.6f} seconds")
     vocab = {}
     merges = []
     word_count = byte_counter

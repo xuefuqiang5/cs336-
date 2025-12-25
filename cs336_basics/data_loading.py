@@ -2,6 +2,9 @@ import torch
 import numpy as np
 
 def data_loading(data, batch_size, context_length, device): 
+    n_tokens = len(data)
+    if n_tokens <= context_length:
+        return None
     max_start = len(data) - context_length 
     starts = np.random.randint(0, max_start, size=batch_size)
     x, y = [], []

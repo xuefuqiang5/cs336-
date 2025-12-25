@@ -2,7 +2,7 @@ import torch
 import argparse
 import numpy as np
 import os
-
+import time
 from tqdm import trange
 from .bpe_train import bpe_train
 from .Tokenizer import BPETokenizer, split2chunks
@@ -12,18 +12,13 @@ from .data_loading import data_loading
 from .cross_entropy_loss import cross_entropy_loss
 from .gradient_clipping import gradient_clipping
 
-def train():
+def init_args(): 
     parser = argparse.ArgumentParser()
 
-    # ===================== 数据相关 =====================
-    parser.add_argument("--data_path", type=str, required=True)
-    parser.add_argument("--out_path", type=str, required=True)
-    parser.add_argument("--buffer_size", type=int, default=1024 * 1024)
-
     # ===================== tokenizer =====================
-    parser.add_argument("--vocab_path", type=str, required=True)
-    parser.add_argument("--merges_path", type=str, required=True)
-    parser.add_argument("--special_tokens", nargs="+", required=True)
+    parser.add_argument("--data_path", type=str, required=True)
+    parser.add_argument("--vocab_filepath", type=str, required=True)
+    parser.add_argument("--merges_filepath", type=str, required=True)
 
     # ===================== model =====================
     parser.add_argument("--vocab_size", type=int, required=True)
@@ -41,28 +36,126 @@ def train():
     parser.add_argument("--weight_decay", type=float, default=0.1)
 
 
-    # ===================== data / batching =====================
+    # ===================== train =====================
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--num_epochs", type=int, default=10)
-
-    # ===================== 其他 =====================
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--grad_clip", type=float, default=1.0)
     parser.add_argument("--dtype", type=str, default="int32")
     parser.add_argument("--log_interval", type=int, default=100)
-    parser.add_argument("--device", type=str, default='cpu')
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    device = torch.device(args.device)
-
-    model = TransformerLm(
+def get_model(args):
+    return TransformerLm(
         args.vocab_size, 
         args.context_length, 
         args.num_layers, 
+        args.d_model,
         args.num_heads, 
-        args.num_heads, 
-        args.dff, 
+        args.d_ff, 
         args.theta
     )
+def get_tokenizer(args, special_tokens): 
+    return BPETokenizer.from_files(
+        args.vocab_filepath, 
+        args.merges_filepath,
+        special_tokens
+    ) 
+
+   
+def get_batch_iterable(args, tokenizer, endoftext="<|endoftext|>"):
+    """
+    生成器：循环处理 chunks 并产出多个 batches
+    """
+    # 假设 split2chunks 返回一个 chunk 生成器
+    chunks = split2chunks(args.data_path, endoftext, args.buffer_size)
+    
+    for chunk in chunks:
+        # 1. 编码当前 chunk
+        id_list = tokenizer.encode(chunk)
+        
+        # 2. 如果当前 chunk 编码后太短，跳过
+        if len(id_list) <= args.context_length:
+            continue
+            
+        # 3. 计算这个 chunk 应该产出多少个 batch
+        # 策略：为了让每个 token 都有机会被看到，产出 (chunk_len / context_length) * 某个倍数
+        # 或者根据你的训练需求设置固定步数
+        num_batches_per_chunk = max(1, len(id_list) // (args.context_length * 2))
+        
+        for _ in range(num_batches_per_chunk):
+            batch = data_loading(id_list, args.batch_size, args.context_length, args.device)
+            if batch is not None:
+                yield batch # 返回 (x, y)
+
+class DataLoader:
+    def __init__(self, args, tokenizer):
+        self.args = args
+        self.tokenizer = tokenizer
+
+    def __iter__(self):
+        # 每次调用 iter(obj) 时（比如进入 for 循环时），都会执行这里的代码
+        return get_batch_iterable(self.args, self.tokenizer)
+
+def train(args, data_loader, model, optimizer):
+    """
+    训练函数：负责一个 Epoch 的数据迭代
+    """
+    model.train()  # 确保模型处于训练模式（开启 Dropout 等）
+    
+    total_loss = 0
+    start_time = time.time()
+    
+    # 梯度累积步数，如果 args 中没定义，默认为 1
+    grad_accum_steps = getattr(args, "grad_accum_steps", 1)
+    
+    # 清空初始梯度
+    optimizer.zero_grad()
+
+    # data_loader 是 get_batch_iterable 返回的生成器
+    for batch_idx, (x, y) in enumerate(data_loader):
+        # 1. 数据移动到设备 (GPU/CPU)
+        # 如果 get_batch_iterable 内部已经移动过，这里可以省略
+        x, y = x.to(args.device), y.to(args.device)
+
+        # 2. 前向传播
+        # 假设模型输出为 logits, 形状为 (batch, seq_len, vocab_size)
+        logits = model(x)
+        
+        # 3. 计算损失 (Cross Entropy)
+        # 注意：CrossEntropyLoss 需要将 logits 展平为 (batch * seq_len, vocab_size)
+        # y 展平为 (batch * seq_len)
+        loss = cross_entropy_loss(logits.view(-1, logits.size(-1)), y.view(-1))
+        
+        # 4. 梯度累积处理：缩放损失
+        loss = loss / grad_accum_steps
+        loss.backward()
+
+        # 5. 更新参数
+        if (batch_idx + 1) % grad_accum_steps == 0:
+            # 梯度裁剪 (防止梯度爆炸)
+            if hasattr(args, "grad_clip"):
+                gradient_clipping(model.parameters(), args.grad_clip)
+            
+            optimizer.step()
+            optimizer.zero_grad()
+
+        # 6. 日志记录
+        total_loss += loss.item() * grad_accum_steps
+        if batch_idx % args.log_interval == 0:
+            elapsed = time.time() - start_time
+            # 计算当前的平均损失
+            avg_loss = total_loss / (batch_idx + 1)
+            print(f"Batch {batch_idx} | "
+                  f"Loss: {avg_loss:.4f} | "
+                  f"Ms/Batch: {elapsed * 1000 / (batch_idx + 1):.2f}")
+
+    return total_loss / (batch_idx + 1)
+
+def main():
+    args = init_args()
+    args.device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = get_model(args)
     optimizer = AdamW(
         model.parameters, 
         args.lr, 
@@ -70,84 +163,12 @@ def train():
         args.betas, 
         args.eps
     )
-    # =====================================================
-    # 1️⃣ 文本 → token ids（流式）
-    # =====================================================
-    if not os.path.exists(args.out_path):
-        print("Tokenizing dataset (streaming)...")
+    tokenizer = get_tokenizer(args)
+    data_loader = DataLoader(args, tokenizer)
+    for epoch in range(args.epochs):
+        print(f"\n--- Epoch {epoch} Start ---")
+        epoch_loss = train(args, data_loader, model, optimizer)
+        print(f"End of Epoch {epoch} | Average Loss: {epoch_loss:.4f}")
 
-        tokenizer = BPETokenizer.from_files(
-            args.vocab_path,
-            args.merges_path,
-            args.special_tokens,
-        )
-
-        chunks = split2chunks(
-            args.data_path,
-            args.special_tokens[0],
-            buffer_size=args.buffer_size,
-        )
-
-        with open(args.out_path, "wb") as f:
-            for chunk in chunks:
-                token_ids = tokenizer.encode(chunk)
-                np.asarray(token_ids, dtype=args.dtype).tofile(f)
-
-    # =====================================================
-    # 2️⃣ memory-mapped dataset
-    # =====================================================
-    data = np.memmap(
-        args.out_path,
-        dtype=args.dtype,
-        mode="r",
-    )
-
-    num_tokens = len(data)
-    steps_per_epoch = num_tokens // (args.batch_size * args.context_length)
-
-    print(f"Total tokens: {num_tokens}")
-    print(f"Steps per epoch: {steps_per_epoch}")
-
-    model.to(device)
-    model.train()
-
-    # =====================================================
-    # 3️⃣ Training loop
-    # =====================================================
-    global_step = 0
-
-    for epoch in range(args.num_epochs):
-        epoch_loss = 0.0
-
-        for step in trange(steps_per_epoch, desc=f"Epoch {epoch}"):
-            # ---- sample batch ----
-            x, y = data_loading(
-                data,
-                args.batch_size,
-                args.context_length,
-                device,
-            )
-
-            # ---- forward ----
-            logits = model(x)  # (B, L, vocab_size)
-
-            # ---- loss ----
-            loss = cross_entropy_loss(
-                logits.view(-1, logits.size(-1)),
-                y.view(-1),
-            )
-
-            # ---- backward ----
-            optimizer.zero_grad(set_to_none=True)
-            loss.backward()
-            gradient_clipping(model.parameters(), 1.0)
-            optimizer.step()
-
-            epoch_loss += loss.item()
-            global_step += 1
-
-            if global_step % args.log_interval == 0:
-                print(f"step {global_step} | loss {loss.item():.4f}")
-
-        avg_loss = epoch_loss / steps_per_epoch
-        print(f"[Epoch {epoch}] avg loss = {avg_loss:.4f}")
+if __name__ == "__main__": 
+    main()
