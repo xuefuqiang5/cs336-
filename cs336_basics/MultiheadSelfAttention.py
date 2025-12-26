@@ -104,7 +104,7 @@ class MultiheadSelfAttention(nn.Module):
             k = rope(k, self.token_positions)
         
         L = x.size(-2)
-        mask = torch.triu(torch.ones(L, L), diagonal=1).bool()
+        mask = torch.triu(torch.ones(L, L, device=x.device), diagonal=1).bool()
         mask = mask[None, None, :, :]
         attention_socres = scaled_dot_product_attention(q, k, v, ~mask)
         attention_socres = rearrange(attention_socres, "... h l d_k -> ... l (h d_k)", h=self.num_heads)

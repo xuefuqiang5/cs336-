@@ -2,6 +2,7 @@
 data_path: "/home/xuewenqi/cs336-/data/TinyStoriesV2-GPT4-train.txt"
 vocab_filepath: "/home/xuewenqi/cs336-/cs336_basics/Tokenizer/vocab.json"
 merges_filepath: "/home/xuewenqi/cs336-/cs336_basics/Tokenizer/merges.txt"
+buffer_size: 4194304
 
 # ===================== model =====================
 # 根据 GPT-2 Small 配置
