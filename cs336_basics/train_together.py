@@ -13,6 +13,7 @@ from cs336_basics.data_loading import data_loading
 from cs336_basics.cross_entropy_loss import cross_entropy_loss
 from cs336_basics.gradient_clipping import gradient_clipping
 from cs336_basics.parallel_bpe import train_bep
+from cs336_basics.DataLoader import DataLoader
 import yaml
 import argparse
 import yaml
@@ -84,7 +85,6 @@ def get_tokenizer(args, special_tokens):
     return BPETokenizer.from_files(args.vocab_filepath, args.merges_filepath, special_tokens)
 
 
-class DataLoader()
 def train(args, data_loader, model, optimizer):
     """
     训练函数：负责一个 Epoch 的数据迭代
@@ -140,8 +140,7 @@ def main():
         args.betas, 
         args.eps
     )
-    tokenizer = get_tokenizer(args, ["<|endoftext|>"])
-    data_loader = DataLoader(args, tokenizer)
+    data_loader = DataLoader("data/data.bin", args.batch_size, args.context_length, args.device)
     for epoch in range(args.epochs):
         print(f"\n--- Epoch {epoch} Start ---")
         epoch_loss = train(args, data_loader, model, optimizer)

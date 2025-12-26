@@ -24,11 +24,11 @@ def generate_idx_data(input_filepath: str, output_dir: str, tokenizer: BPETokeni
     token_count = 0
     with open(bin_file, "wb") as f: 
         chunks = split2chunks(input_filepath, "<|endoftext|>")
-        for chunk in chunks: 
+        for chunk in tqdm(chunks): 
             ids = tokenizer.encode(chunk)
-            if ids > 0:
+            if len(ids) > 0:
                 data = np.array(ids, dtype=np.int32)
-                f.write(ids)
+                f.write(data)
                 token_count += len(data)
     
     print(f"处理完成！总计 Token 数量: {token_count}")
@@ -64,8 +64,8 @@ def generate_idx_data_parallel(
     # 注意：确保你的 split2chunks 返回的是字符串列表/生成器
     from cs336_basics.Tokenizer import split2chunks
     chunks = split2chunks(input_filepath, "<|endoftext|>", buffer_size=buffer_size)
-
-    # 2. 使用进程池
+    res = []
+   # 2. 使用进程池
     # 建议使用 imap 或 map 以保持数据的原始顺序
     print(f"使用 {num_workers} 个核心进行并发编码...")
     
@@ -94,4 +94,4 @@ if __name__ == "__main__":
     input_filepath = "/home/xuewenqi/cs336-/data/TinyStoriesV2-GPT4-train.txt"
     output_dir = "/home/xuewenqi/cs336-/data/"
     tokenizer = BPETokenizer.from_files("cs336_basics/Tokenizer/vocab.json", "cs336_basics/Tokenizer/merges.txt", special_tokens="<|endoftext|>")
-    generate_idx_data_parallel(input_filepath, output_dir, tokenizer)
+    generate_idx_data(input_filepath, output_dir, tokenizer)
