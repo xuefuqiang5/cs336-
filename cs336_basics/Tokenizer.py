@@ -1,7 +1,9 @@
 import regex as re
 from itertools import chain
 import json
+from cs336_basics.trian_vocab_merges import BYTE_DECODER
 from collections.abc import Iterable, Iterator
+
 """
 Byte Pair Encoding (BPE) Tokenizer Implementation
 =================================================
@@ -102,6 +104,7 @@ class BPETokenizer:
         self.vocab = vocab
         self.merges = merges
         self.special_tokens = special_tokens
+        self.BYTE_DECODER = BYTE_DECODER
 
     @classmethod
     def from_files(
@@ -118,29 +121,35 @@ class BPETokenizer:
         :param special_tokens: optional list of special tokens
         :return: BPETokenizer instance
         """
-        # --- load vocab ---
+       # --- 1. 加载并还原 Vocab ---
         with open(vocab_filepath, 'r', encoding='utf-8') as f:
             vocab_json = json.load(f)
+        
+        # 目标：将 {"Ġt": 123} 还原为 {123: b' t'}
+        # 注意：json 加载后的 key 永远是 str，value 是 int (id)
+        vocab = {}
+        for idx, token_str in vocab_json.items():
+            # 使用 BYTE_DECODER 将映射字符串还原为原始字节流
+            # 例如: "Ġt" -> [32, 116] -> b' t'
+            token_bytes = bytes([BYTE_DECODER[char] for char in token_str])
+            vocab[int(idx)] = token_bytes
 
-        # ensure keys are int, values are bytes
-        # if vocab_json is {str: int}, we invert it to int -> bytes
-        if all(isinstance(k, str) for k in vocab_json.keys()):
-            reverse_vocab = {v: k.encode('utf-8') for k, v in vocab_json.items()}
-        else:
-            reverse_vocab = {int(k): v.encode('utf-8') for k, v in vocab_json.items()}
-
-        # --- load merges ---
+        # --- 2. 加载并还原 Merges ---
         merges = []
         with open(merges_filepath, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
-                if line == "" or line.startswith("#"):
+                if not line or line.startswith("#"):
                     continue
-                a, b = line.split()
-                merges.append((a.encode('utf-8'), b.encode('utf-8')))
+                
+                parts = line.split()
+                if len(parts) == 2:
+                    # 将 "Ġ t" 还原为 (b' ', b't')
+                    p1 = bytes([BYTE_DECODER[char] for char in parts[0]])
+                    p2 = bytes([BYTE_DECODER[char] for char in parts[1]])
+                    merges.append((p1, p2))
 
-        # --- create tokenizer instance ---
-        return cls(vocab=reverse_vocab, merges=merges, special_tokens=special_tokens)   
+        return cls(vocab=vocab, merges=merges, special_tokens=special_tokens)   
 
     def merge_word(self, word: bytes) -> list[bytes]: 
         merged_word = list(word)
@@ -203,3 +212,4 @@ class BPETokenizer:
                 for b in merged:
                     yield reverse_vocab[b]
 
+tokenizer = BPETokenizer.from_files("cs336_basics/Tokenizer/vocab.json", "cs336_basics/Tokenizer/merges.txt")
