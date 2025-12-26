@@ -120,8 +120,7 @@ def get_model(args):
     )
 def get_tokenizer(args, special_tokens): 
 
-    vocab, merges = train_bep(args.data_path, args.vocab_size, special_tokens) 
-    return BPETokenizer(vocab, merges)
+    return BPETokenizer.from_files(args.vocab_filepath, args.merges.filepath, special_tokens)
 
 
    
