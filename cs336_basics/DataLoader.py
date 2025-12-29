@@ -34,7 +34,8 @@ class DataLoader:
             # 注意：np.memmap 对象可以直接作为参数传给 data_loading，
             # 只要你的 data_loading 内部是用索引取值的（如 data[i:i+L]）
             yield self.get_batch()
-
+    def get_len(self):
+        return len(self.data)
     def get_batch(self):
         """
         封装调用 data_loading 的逻辑

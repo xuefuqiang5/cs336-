@@ -14,6 +14,7 @@ from cs336_basics.cross_entropy_loss import cross_entropy_loss
 from cs336_basics.gradient_clipping import gradient_clipping
 from cs336_basics.parallel_bpe import train_bep
 from cs336_basics.DataLoader import DataLoader
+from cs336_basics.checkpointing import save_checkpoint
 import yaml
 import argparse
 import yaml
@@ -101,7 +102,10 @@ def train(args, data_loader, model, optimizer):
     optimizer.zero_grad()
 
     # data_loader 是 get_batch_iterable 返回的生成器
-    for batch_idx, (x, y) in enumerate(tqdm(data_loader)):
+    steps_per_epoch = data_loader.get_len() // (args.batch_size * args.context_length)
+    for batch_idx, (x, y) in enumerate(tqdm(data_loader, mininterval=30.0)):
+        if batch_idx >= steps_per_epoch:
+            break
         x, y = x.to(args.device), y.to(args.device)
 
         logits = model(x)
@@ -130,20 +134,25 @@ def train(args, data_loader, model, optimizer):
     return total_loss / (batch_idx + 1)
 
 def main():
+    print(torch.cuda.device_count())
+    print(torch.cuda.get_device_name(0))
     args = init_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
     model = get_model(args).to(args.device)
+    from cs336_basics.debug_utils import DeviceDetective
+    DeviceDetective.check_model_params(model)
     optimizer = AdamW(
         model.parameters(), 
         args.lr, 
         args.weight_decay, 
         args.betas, 
-        args.eps
+        float(args.eps)
     )
     data_loader = DataLoader("data/data.bin", args.batch_size, args.context_length, args.device)
     for epoch in range(args.epochs):
         print(f"\n--- Epoch {epoch} Start ---")
         epoch_loss = train(args, data_loader, model, optimizer)
+        save_checkpoint(model, optimizer, epoch, f"checkpoint_{epoch}.pt")
         print(f"End of Epoch {epoch} | Average Loss: {epoch_loss:.4f}")
 
 if __name__ == "__main__": 

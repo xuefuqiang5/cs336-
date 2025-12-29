@@ -88,6 +88,8 @@ class MultiheadSelfAttention(nn.Module):
         self.token_positions = token_positions
         self.use_rope = use_rope
         self.max_seq_len = max_seq_len
+        if self.use_rope: 
+            self.rope = RoPE(self.theta, self.d_k, max_seq_len=self.max_seq_len)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor: 
         # qkv.shape = [3*d_model, d_model]
@@ -99,9 +101,8 @@ class MultiheadSelfAttention(nn.Module):
         k = rearrange(k, "... l (h d_k) -> ... h l d_k", h=self.num_heads)
         v = rearrange(v, "... l (h d_k) -> ... h l d_k", h=self.num_heads)
         if self.use_rope: 
-            rope = RoPE(self.theta, self.d_k, max_seq_len=self.max_seq_len)
-            q = rope(q, self.token_positions)
-            k = rope(k, self.token_positions)
+            q = self.rope(q, self.token_positions)
+            k = self.rope(k, self.token_positions)
         
         L = x.size(-2)
         mask = torch.triu(torch.ones(L, L, device=x.device), diagonal=1).bool()

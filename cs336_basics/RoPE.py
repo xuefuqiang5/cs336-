@@ -15,10 +15,14 @@ class RoPE(nn.Module):
     
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None=None) -> torch.Tensor: 
         L = x.size(-2)
+        device = x.device
         if token_positions == None: 
-            token_positions = torch.arange(0, L)
+            token_positions = torch.arange(0, L, device=device)
+
         cos = self.cos[token_positions] # cos.shape == [... max_seq_len K]
         sin = self.sin[token_positions]
+        cos = cos.to(device)
+        sin = sin.to(device)
         x_even = x[..., 0::2]
         x_odd = x[..., 1::2]
 
