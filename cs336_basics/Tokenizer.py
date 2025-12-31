@@ -212,4 +212,4 @@ class BPETokenizer:
                 for b in merged:
                     yield reverse_vocab[b]
 
-tokenizer = BPETokenizer.from_files("cs336_basics/Tokenizer/vocab.json", "cs336_basics/Tokenizer/merges.txt")
+TOKENIZER = BPETokenizer.from_files("cs336_basics/Tokenizer/vocab.json", "cs336_basics/Tokenizer/merges.txt")
