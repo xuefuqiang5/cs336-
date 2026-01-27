@@ -51,12 +51,13 @@ def _encode_worker(tokenizer, chunk):
 def generate_idx_data_parallel(
     input_filepath: str, 
     output_dir: str, 
+    out_file_name: str,
     tokenizer: BPETokenizer, 
     num_workers: int = os.cpu_count(),
-    buffer_size: int = 1024 * 1024 * 5 # 每个进程处理 5MB 的块
+    buffer_size: int = 1024 * 1024 * 5, # 每个进程处理 5MB 的块
 ):
     os.makedirs(output_dir, exist_ok=True)
-    bin_file = os.path.join(output_dir, "data.bin")
+    bin_file = os.path.join(output_dir, out_file_name)
     token_count = 0
 
     # 1. 获取 chunks 生成器
@@ -90,7 +91,9 @@ def generate_idx_data_parallel(
 
 
 if __name__ == "__main__": 
-    input_filepath = "/Users/xuewenqi/code/cs336/cs336-/data/data/TinyStoriesV2-GPT4-train.txt"
-    output_dir = "/Users/xuewenqi/code/cs336/cs336-/data"
-    tokenizer = BPETokenizer.from_files("cs336_basics/Tokenizer/vocab.json", "cs336_basics/Tokenizer/merges.txt", special_tokens="<|endoftext|>")
-    generate_idx_data_parallel(input_filepath, output_dir, tokenizer)
+    input_filepath = "data/TinyStoriesV2-GPT4-valid.txt"
+    output_dir = "./data"
+    out_file_name = "TinyStoresV2-GPT-valid.bin"
+    from cs336_basics.Tokenizer import TOKENIZER
+    tokenizer = TOKENIZER
+    generate_idx_data_parallel(input_filepath, output_dir, out_file_name, tokenizer)

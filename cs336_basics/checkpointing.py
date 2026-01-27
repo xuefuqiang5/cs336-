@@ -28,3 +28,4 @@ def load_checkpoint(src: Union[str, os.PathLike, BinaryIO],
     optimizer.load_state_dict(checkpoint["optimizer_state"])
     iteration = checkpoint["iteration"]
     return iteration
+

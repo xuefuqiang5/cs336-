@@ -86,58 +86,70 @@ def get_tokenizer(args, special_tokens):
     return BPETokenizer.from_files(args.vocab_filepath, args.merges_filepath, special_tokens)
 
 
-def train(args, data_loader, model, optimizer):
-    """
-    训练函数：负责一个 Epoch 的数据迭代
-    """
+def evaluate_model(args, valid_data_loader, model):
+    model.eval()  # 评估模式
+    total_loss = 0.0
+    total_tokens = 0  # 用于语言模型等 token 级 loss
+    steps_per_epoch = valid_data_loader.get_len() // (args.batch_size * args.context_length)
+    with torch.no_grad():
+        for batch_idx, (x, y) in enumerate(valid_data_loader):
+            if batch_idx >= steps_per_epoch:
+                break
+
+            x, y = x.to(args.device), y.to(args.device)
+
+            logits = model(x)
+
+            loss = cross_entropy_loss(
+                logits.view(-1, logits.size(-1)),
+                y.view(-1),
+            )
+            num_tokens = y.numel()
+            total_loss += loss.item() * num_tokens
+            total_tokens += num_tokens
+    avg_loss = total_loss / total_tokens
+    return {
+        "val_loss": avg_loss,
+    }
+def train(args, train_data_loader, valid_data_loader, model, optimizer):
     model.train()  # 确保模型处于训练模式（开启 Dropout 等）
-    
     total_loss = 0
     start_time = time.time()
-    
-    # 梯度累积步数，如果 args 中没定义，默认为 1
     grad_accum_steps = getattr(args, "grad_accum_steps", 1)
-    
-    # 清空初始梯度
     optimizer.zero_grad()
-
     # data_loader 是 get_batch_iterable 返回的生成器
-    steps_per_epoch = data_loader.get_len() // (args.batch_size * args.context_length)
-    for batch_idx, (x, y) in enumerate(tqdm(data_loader, mininterval=30.0)):
+    steps_per_epoch = train_data_loader.get_len() // (args.batch_size * args.context_length)
+    for batch_idx, (x, y) in enumerate(tqdm(train_data_loader, mininterval=30.0)):
         if batch_idx >= steps_per_epoch:
             break
         x, y = x.to(args.device), y.to(args.device)
-
         logits = model(x)
-        
         loss = cross_entropy_loss(logits.view(-1, logits.size(-1)), y.view(-1))
-        
         loss = loss / grad_accum_steps
         loss.backward()
-
         if (batch_idx + 1) % grad_accum_steps == 0:
             if hasattr(args, "grad_clip"):
                 gradient_clipping(model.parameters(), args.grad_clip)
-            
             optimizer.step()
             optimizer.zero_grad()
-
         total_loss += loss.item() * grad_accum_steps
         if batch_idx % args.log_interval == 0:
             elapsed = time.time() - start_time
             # 计算当前的平均损失
             avg_loss = total_loss / (batch_idx + 1)
-            print(f"Batch {batch_idx} | "
-                  f"Loss: {avg_loss:.4f} | "
-                  f"Ms/Batch: {elapsed * 1000 / (batch_idx + 1):.2f}")
-
+            print(
+                f"Batch {batch_idx} | "
+                f"Loss: {avg_loss:.4f} | "
+                f"Ms/Batch: {elapsed * 1000 / (batch_idx + 1):.2f} | "
+                f"Val loss: {evaluate_model(args, valid_data_loader, model)['val_loss']}"
+            )
     return total_loss / (batch_idx + 1)
 
 def main():
     print(torch.cuda.device_count())
     print(torch.cuda.get_device_name(0))
     args = init_args()
-    args.device = "cuda" if torch.cuda.is_available() else "cpu"
+    args.device = "cuda:1" if torch.cuda.is_available() else "cpu"
     model = get_model(args).to(args.device)
     from cs336_basics.debug_utils import DeviceDetective
     DeviceDetective.check_model_params(model)
@@ -148,12 +160,9 @@ def main():
         args.betas, 
         float(args.eps)
     )
-    data_loader = DataLoader("data/data.bin", args.batch_size, args.context_length, args.device)
-    for epoch in range(args.epochs):
-        print(f"\n--- Epoch {epoch} Start ---")
-        epoch_loss = train(args, data_loader, model, optimizer)
-        save_checkpoint(model, optimizer, epoch, f"checkpoint_{epoch}.pt")
-        print(f"End of Epoch {epoch} | Average Loss: {epoch_loss:.4f}")
+    train_data_loader = DataLoader("data/TinyStoriesV2-GPT4-train.bin", args.batch_size, args.context_length, args.device)
+    valid_data_loader = DataLoader("data/TinyStoriesV2-GPT4-valid.bin", args.batch_size, args.context_length, args.device)
+    train(args, train_data_loader, valid_data_loader, model, optimizer)
 
 if __name__ == "__main__": 
     main()

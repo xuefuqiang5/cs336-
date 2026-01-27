@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 from Tokenizer import BPETokenizer 
+from cs336_basics.Transformer import TransformerLm
 
 def get_next_token(logits, temperature, p):
     """
@@ -78,10 +79,13 @@ def generate_text(model, prompt, temperature, p, max_length=100):
             ids = torch.cat([ids, next_token], dim=-1)
             
             token_id = next_token.item()
-            
+            eos_id = tokenizer.encode("<|endoftext|>") 
+
+            if token_id == eos_id[0]: 
+                break
             word = tokenizer.decode([token_id])
             
-            if token_id == tokenizer.eos_token_id: 
+            if "<|endoftext|>" in word:
                 break
             
             
@@ -89,3 +93,73 @@ def generate_text(model, prompt, temperature, p, max_length=100):
             buffer.append(word)
     
     return "".join(buffer) # 通常返回拼接后的完整字符串比返回 list 更好
+
+if __name__ == "__main__": 
+    # 1. 设置设备
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+    
+    # 2. 初始化模型 (参数必须与训练时完全一致)
+    model = TransformerLm(
+        vocab_size=10000, 
+        context_length=1024,
+        num_layers=12, 
+        d_model=768, 
+        num_heads=12, 
+        d_ff=3072, 
+        theta=10000.0
+    )
+    model.to(device)
+
+    # 3. 加载 Checkpoint
+    checkpoint_path = "checkpoint_0.pt"
+    import os 
+    if not os.path.exists(checkpoint_path):
+        print(f"错误: 找不到文件 {checkpoint_path}")
+        exit()
+
+    print(f"Loading checkpoint from {checkpoint_path}...")
+    try:
+        # map_location 确保在无 GPU 环境也能加载
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        
+        # --- 核心修复逻辑 ---
+        # 你的报错显示 checkpoint 是包含 "model_state" 的字典
+        if isinstance(checkpoint, dict) and "model_state" in checkpoint:
+            state_dict = checkpoint["model_state"]
+        elif isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+            state_dict = checkpoint["model_state_dict"]
+        else:
+            state_dict = checkpoint
+
+        # 处理 'module.' 前缀 (DDP 训练遗留)
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            name = k.replace("module.", "") if k.startswith("module.") else k
+            new_state_dict[name] = v
+            
+        # 加载参数
+        msg = model.load_state_dict(new_state_dict, strict=True)
+        print(f"Model loaded successfully! {msg}")
+        
+    except Exception as e:
+        print(f"\n加载模型失败: {e}")
+        print("建议: 检查 TransformerLm 的定义是否和训练代码中的定义完全一致。")
+        exit()
+
+    # 4. 执行生成
+    # 你可以在这里修改提示词
+    start_prompt = "I can still remember"
+    
+    # 调整生成参数
+    temperature = 0.8  # (0.0 - 1.0+) 控制随机性
+    top_p = 0.9        # (0.0 - 1.0) Nucleus sampling
+    
+    print(start_prompt, end=" ")
+    generate_text(
+        model=model, 
+        prompt=start_prompt, 
+        temperature=temperature, 
+        p=top_p, 
+        max_length=1000
+    )
