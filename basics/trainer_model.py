@@ -40,6 +40,8 @@ def train(model, device, args):
     train_data = get_memmap_dataset(args.train_data_path)
     val_data = get_memmap_dataset(args.val_data_path)
 
+    print("*" * 100)
+    print(f"the train data's path is {args.train_data_path}")
     # 3. 构建优化器
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 

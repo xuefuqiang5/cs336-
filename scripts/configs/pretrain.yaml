@@ -6,7 +6,7 @@ root_dir: ${hydra:runtime.cwd}
 
 exp_name: cs336_lm_TinyStories
 dataset_name: TinyStories     # `TinyStories` or `owt`, change as needed
-dat_dir: ${root_dir}/data
+dat_dir: ${root_dir}/data/dat
 
 training:
   train_data_path: ${dat_dir}/TinyStoriesV2-GPT4-train.dat

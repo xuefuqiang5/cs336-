@@ -1,0 +1,49 @@
+# Hydra config for ablation experiments
+#
+# Each ablation run overrides specific model knobs.
+# The sweep script (run_ablations.py) reads this base config and
+# applies per-run overrides dynamically.
+
+root_dir: ${hydra:runtime.cwd}
+
+dataset_name: TinyStories
+dat_dir: ${root_dir}/data/dat
+
+training:
+  train_data_path: ${dat_dir}/TinyStoriesV2-GPT4-train.dat
+  val_data_path: ${dat_dir}/TinyStoriesV2-GPT4-valid.dat
+
+  save_path: "checkpoints/ablations"
+  lr: 0.0005
+  min_lr: 0.0001
+  weight_decay: 0.01
+  batch_size: 32
+  context_length: 256
+  train_steps: 5000
+  clip_grad_norm: 1.0
+  warmup_iters: 500
+  cosine_iters: 5000
+  val_interval: 100
+  val_batches: 20
+  save_interval: 1000
+  resume_checkpoint: null
+
+model:
+  vocab_size: 32000
+  context_length: 256
+  d_model: 512
+  num_layers: 4
+  num_heads: 16
+  d_ff: 1344
+  rope_theta: 10000.0
+
+# Ablation knobs (overridden per-run by the script)
+ablation:
+  use_rmsnorm: true
+  norm_style: pre          # "pre" or "post"
+  pos_emb: rope            # "rope" or "nope"
+  ffn_type: swiglu         # "swiglu" or "silu"
+
+wandb:
+  project: cs336-ablations
+  entity: null              # set your wandb entity / leave null for default

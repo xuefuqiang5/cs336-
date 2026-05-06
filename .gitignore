@@ -161,3 +161,8 @@ cython_debug/
 
 .ruff_cache/
 *.zip
+# Project data and outputs
+data/
+mlruns/
+outputs/
+tokenizer_data/
